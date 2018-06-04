@@ -3,7 +3,7 @@ Gem::Specification.new do |s|
   s.version       = '0.1.0'
   s.licenses      = ['Apache-2.0']
   s.summary       = 'Evaluates real client IP from X-Forwarded-For header'
-  s.description   = ''
+  s.description   = 'See https://github.com/fholzer/logstash-filter-real_ip/blob/master/README.md for details.'
   s.homepage      = 'https://github.com/fholzer/logstash-filter-real_ip'
   s.authors       = ['Ferdinand Holzer']
   s.email         = 'ferdinand.holzer@gmail.com'
