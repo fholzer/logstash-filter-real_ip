@@ -174,7 +174,14 @@ class LogStash::Filters::RealIp < LogStash::Filters::Base
       end
     end
 
-    # In case X-Forwarded-For header is set, but empty
+    # in case x_forwarded_for is empty
+    if fwdfor.length == 0
+      event.set(@target_field, remote_addr)
+      filter_matched(event)
+      return
+    end
+
+    # In case X-Forwarded-For header is set, but zero-length string
     if fwdfor.length == 1 and fwdfor[0].length < 1
       @logger.debug? and @logger.debug("xfwdfor header was present but empty, evaluate to remote_addr", :address => remote_addr)
       event.set(@target_field, remote_addr)
@@ -199,6 +206,12 @@ class LogStash::Filters::RealIp < LogStash::Filters::Base
         return
       end
     end
+
+    # in case remote_addr and all x_forwarded_for IPs are trusted, use the
+    # left-most IP from x_forwarded_for
+    event.set(@target_field, fwdfor[0])
+    filter_matched(event)
+    return
 
   end # def filter
 end # class LogStash::Filters::RealIp

@@ -49,6 +49,18 @@ describe LogStash::Filters::RealIp do
       expect(subject).to include("real_ip")
       expect(subject.get('real_ip')).to eq('1.2.3.4')
     end
+
+    sample("remote_addr" => "10.2.3.4", "xfwdfor" => ["192.168.5.6", "192.168.3.4"]) do
+      expect(subject).not_to include("tags")
+      expect(subject).to include("real_ip")
+      expect(subject.get('real_ip')).to eq('192.168.5.6')
+    end
+
+    sample("remote_addr" => "10.2.3.4", "xfwdfor" => []) do
+      expect(subject).not_to include("tags")
+      expect(subject).to include("real_ip")
+      expect(subject.get('real_ip')).to eq('10.2.3.4')
+    end
   end
 
   describe "Evaluates real IP correctly with flat string xfwfor" do
