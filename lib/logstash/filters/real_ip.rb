@@ -6,13 +6,15 @@ require "ipaddr"
 # Evaluate an HTTP request's client address like Apache httpd's mod_remoteip or
 # Nginx's realip module.
 #
-# For an event like this:
+#
+# For an event like this...
 # [source,ruby]
 #     {
-#         "remote_addr" => "10.1.1.1"
-#         "x_fwd_for" => ["1.2.3.4", "10.2.2.2"]
+#       "remote_addr" => "10.1.1.1"
+#       "x_fwd_for" => ["1.2.3.4", "10.2.2.2"]
 #     }
-# An example configuration looks like so:
+#
+# ...an example configuration looks like so:
 # [source,ruby]
 #     filter {
 #       real_ip {
@@ -31,12 +33,15 @@ require "ipaddr"
 # an array. For ease of use the real_ip plugin provides capabilities to parse
 # such a comma-separated string. To enable this feature, use the
 # `x_forwarded_for_is_string` option.
+#
+# For an event like this...
 # [source,ruby]
 #     {
-#         "remote_addr" => "10.1.1.1"
-#         "x_fwd_for" => "1.2.3.4, 10.2.2.2"
+#       "remote_addr" => "10.1.1.1"
+#       "x_fwd_for" => "1.2.3.4, 10.2.2.2"
 #     }
-# An example configuration looks like so:
+#
+# ...an example configuration looks like so:
 # [source,ruby]
 #     filter {
 #       real_ip {
@@ -58,6 +63,18 @@ require "ipaddr"
 # * The filter is configured using `x_forwarded_for_is_string = true`, but the
 # `x_forwarded_for` field isn't a string.
 # * The `x_forwarded_for` field contains anything other that IP addresses.
+#
+# ==== Evaluation behavior ====
+# The plugin checks whether the `remote_address_field` is trusted, if not, it
+# will be written to `target_field`, and evaluation ends.
+#
+# Otherwise each IP in the `x_forwarded_for_field` is checked, from right to
+# left until an untrusted IP is encountered, which will be written to
+# `target_field` and evaluation ends at that point.
+#
+# In case `remote_address_field` and all IPs in `x_forwarded_for_field` are
+# trusted, the left-most IP of the `x_forwarded_for_field` is written to
+# `target_field`.
 #
 class LogStash::Filters::RealIp < LogStash::Filters::Base
   config_name "real_ip"

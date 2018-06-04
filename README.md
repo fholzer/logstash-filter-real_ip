@@ -62,6 +62,18 @@ The plugin will fail if one of below it true:
 `x_forwarded_for` field isn't a string.
 * The `x_forwarded_for` field contains anything other that IP addresses.
 
+#### Evaluation behavior
+The plugin checks whether the `remote_address_field` is trusted, if not, it
+will be written to `target_field`, and evaluation ends.
+
+Otherwise each IP in the `x_forwarded_for_field` is checked, from right to
+left until an untrusted IP is encountered, which will be written to
+`target_field` and evaluation ends at that point.
+
+In case `remote_address_field` and all IPs in `x_forwarded_for_field` are
+trusted, the left-most IP of the `x_forwarded_for_field` is written to
+`target_field`.
+
 #### Configuration
 ##### remote_address_field
 * type: string
