@@ -98,6 +98,16 @@ class LogStash::Filters::RealIp < LogStash::Filters::Base
   # address to.
   config :target_field, :validate => :string, :default => "real_ip"
 
+  # writes all valid IPs found in the x_forwarded_for header to this field
+  config :x_forwarded_for_target, :validate => :string, :default => ""
+
+  # In case any IPs processed are invalid IP addresses,
+  # write all of them as one string to the field specified.
+  config :target_on_invalid_ip, :validate => :string, :default => ""
+
+  # In case any IPs processed are invalid IP addresses, these tags will be set.
+  config :tags_in_invalid_ip, :valudate => :array, :default => ["_real_ip_invalid_ip"]
+
   # In case of error during evaluation, these tags will be set.
   config :tags_on_failure, :validate => :array, :default => ["_real_ip_lookup_failure"]
 
@@ -122,6 +132,7 @@ class LogStash::Filters::RealIp < LogStash::Filters::Base
     end
 
     @trusted_networks.map! {|e| IPAddr.new(e)}
+    @need_all = x_forwarded_for_target.length > 0
   end # def register
 
   private
@@ -151,7 +162,7 @@ class LogStash::Filters::RealIp < LogStash::Filters::Base
 
     # check for presence of x_forwarded_for_field
     if fwdfor == nil
-      @logger.info("x_forwarded_for_field missing from event", :event => event)
+      @logger.debug? and @logger.debug("x_forwarded_for_field missing from event", :event => event)
       event.set(@target_field, remote_addr)
       filter_matched(event)
       return
@@ -206,29 +217,43 @@ class LogStash::Filters::RealIp < LogStash::Filters::Base
       return
     end
 
+    found = false
+    fatal = false
+    target = []
     # check each IP in x_forwarded_for_field from last to first
     (fwdfor.length - 1).downto(0) do |i|
       begin
         ip = IPAddr.new(fwdfor[i])
       rescue ArgumentError => e
         @logger.warn("Invalid IP address", :address => fwdfor[i], :event => event)
-        @tags_on_failure.each {|tag| event.tag(tag)}
-        return
+        if not found
+          @tags_on_failure.each {|tag| event.tag(tag)}
+          fatal = true
+        end
+        @tags_in_invalid_ip.each {|tag| event.tag(tag)}
+        next
       end
 
+      target.unshift(ip.to_s()) if @need_all
+
       # return on the first non-match against our trusted networks
-      if match(ip) == false
+      if found == false and fatal == false and match(ip) == false
         event.set(@target_field, fwdfor[i])
         filter_matched(event)
-        return
+        return if not @need_all
+        found = true
       end
     end
 
-    # in case remote_addr and all x_forwarded_for IPs are trusted, use the
-    # left-most IP from x_forwarded_for
-    event.set(@target_field, fwdfor[0])
-    filter_matched(event)
-    return
+    event.set(@x_forwarded_for_target, target) if @need_all
+
+    if found == false and fatal == false
+      # in case remote_addr and all x_forwarded_for IPs are trusted, use the
+      # left-most IP from x_forwarded_for
+      event.set(@target_field, fwdfor[0])
+      filter_matched(event)
+      return
+    end
 
   end # def filter
 end # class LogStash::Filters::RealIp
