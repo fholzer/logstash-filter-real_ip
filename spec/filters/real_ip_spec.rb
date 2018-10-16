@@ -85,6 +85,13 @@ describe LogStash::Filters::RealIp do
       expect(subject.get('tags')).to include('_real_ip_invalid_ip')
       expect(subject.get('tags')).to include('_real_ip_lookup_failure')
     end
+
+    sample("remote_addr" => "abc", "xfwdfor" => ["1.2.3.4"]) do
+      expect(subject).not_to include("success")
+      expect(subject).to include("tags")
+      expect(subject).not_to include("real_ip")
+      expect(subject.get('tags')).to include('_real_ip_lookup_failure')
+    end
   end
 
   describe "Evaluates real IP correctly with flat string xfwfor" do
@@ -120,6 +127,13 @@ describe LogStash::Filters::RealIp do
       expect(subject).not_to include("tags")
       expect(subject).to include("real_ip")
       expect(subject.get('real_ip')).to eq('1.2.3.4')
+    end
+
+    sample("remote_addr" => "10.2.3.4", "xfwdfor" => 1234) do
+      expect(subject).not_to include("success")
+      expect(subject).not_to include("real_ip")
+      expect(subject).to include("tags")
+      expect(subject.get('tags')).to include('_real_ip_lookup_failure')
     end
   end
 
@@ -229,4 +243,70 @@ describe LogStash::Filters::RealIp do
     end
   end
 
+  describe "Evaluates correctly when ignoring remote_addr" do
+    let(:config) do <<-CONFIG
+      filter {
+        real_ip {
+          x_forwarded_for_field => "xfwdfor"
+          check_remote_address => false
+          x_forwarded_for_is_string => true
+          trusted_networks => ["10.0.0.0/8", "192.168.0.0/16"]
+          add_field => { "success" => "success" }
+        }
+      }
+    CONFIG
+    end
+
+    sample("remote_addr" => "10.2.3.4", "xfwdfor" => "1.2.3.4") do
+      expect(subject).to include("success")
+      expect(subject).to include("real_ip")
+      expect(subject).not_to include("tags")
+      expect(subject.get('real_ip')).to eq('1.2.3.4')
+    end
+
+    sample("remote_addr" => "1.2.3.4", "xfwdfor" => "2.3.4.5") do
+      expect(subject).to include("success")
+      expect(subject).to include("real_ip")
+      expect(subject).not_to include("tags")
+      expect(subject.get('real_ip')).to eq('2.3.4.5')
+    end
+
+    sample("remote_addr" => "10.2.3.4") do
+      expect(subject).not_to include("success")
+      expect(subject).not_to include("real_ip")
+      expect(subject).to include("tags")
+      expect(subject.get('tags')).to include('_real_ip_lookup_failure')
+    end
+
+    sample("remote_addr" => "10.2.3.4", "xfwdfor" => "") do
+      expect(subject).not_to include("success")
+      expect(subject).not_to include("real_ip")
+      expect(subject).to include("tags")
+      expect(subject.get('tags')).to include('_real_ip_lookup_failure')
+    end
+  end
+
+  describe "Filter initialization" do
+    it "should handle absence of remote_address_field" do
+      subject = LogStash::Filters::RealIp.new({
+        "x_forwarded_for_field" => "xfwdfor"
+      })
+      expect {subject.register}.to raise_error(LogStash::ConfigurationError)
+    end
+
+    it "should handle absence of x_forwarded_for_field" do
+      subject = LogStash::Filters::RealIp.new({
+        "remote_address_field" => "raddr"
+      })
+      expect {subject.register}.to raise_error(LogStash::ConfigurationError)
+    end
+
+    it "should ignore absence of remote_address_field if check_remote_address is false" do
+      subject = LogStash::Filters::RealIp.new({
+        "x_forwarded_for_field" => "xfwdfor",
+        "check_remote_address" => false
+      })
+      expect {subject.register}.not_to raise_error
+    end
+  end
 end

@@ -82,6 +82,11 @@ class LogStash::Filters::RealIp < LogStash::Filters::Base
   # Name of the field that contains the layer 3 remote IP address
   config :remote_address_field, :validate => :string, :default => ""
 
+  # Whether to check the remote address against the list of trusted networks.
+  # If set to false and an error is encountered while evaluating
+  # x_forwarded_for, the filter will fail.
+  config :check_remote_address, :validate => :boolean, :default => true
+
   # Name of the field that contains the X-Forwarded-For header value
   config :x_forwarded_for_field, :validate => :string, :default => ""
 
@@ -113,12 +118,12 @@ class LogStash::Filters::RealIp < LogStash::Filters::Base
 
   public
   def register
-    if @remote_address_field.length < 1
+    if @check_remote_address and @remote_address_field.length < 1
       raise LogStash::ConfigurationError, I18n.t(
         "logstash.agent.configuration.invalid_plugin_register",
         :plugin => "filter",
         :type => "real_ip",
-        :error => "The configuration option 'remote_address_field' must be a non-zero length string"
+        :error => "The configuration option 'remote_address_field' must be a non-zero length string if 'check_remote_address' is set to true"
       )
     end
 
@@ -139,10 +144,9 @@ class LogStash::Filters::RealIp < LogStash::Filters::Base
   def match(address)
     # Try every combination of address and network, first match wins
     @trusted_networks.each do |n|
-      @logger.debug("Checking IP inclusion", :address => address, :network => n)
+      @logger.debug? and @logger.debug("Checking IP inclusion", :address => address, :network => n)
       if n.include?(address)
-        true
-        return
+        return true
       end
     end
     false
@@ -150,35 +154,44 @@ class LogStash::Filters::RealIp < LogStash::Filters::Base
 
   public
   def filter(event)
-    remote_addr = event.get(@remote_address_field)
+    remote_addr = event.get(@remote_address_field) if @remote_address_field.length > 0
     fwdfor = event.get(@x_forwarded_for_field)
 
-    # check for presence of remote_address_field
-    if remote_addr == nil
-      @logger.warn("remote_address_field missing from event", :event => event)
-      @tags_on_failure.each {|tag| event.tag(tag)}
-      return
+    if @check_remote_address
+      # check for presence of remote_address_field
+      if remote_addr == nil
+        @logger.warn("remote_address_field missing from event", :event => event)
+        @tags_on_failure.each {|tag| event.tag(tag)}
+        return
+      end
+      # parse remote_address_field to IP
+      begin
+        remote_addr_ip = IPAddr.new(remote_addr)
+      rescue ArgumentError => e
+        @logger.warn("Invalid IP address in remote_addr field", :address => remote_addr, :event => event)
+        @tags_on_failure.each {|tag| event.tag(tag)}
+        return
+      end
+    else
+      remote_addr_ip = nil
     end
 
     # check for presence of x_forwarded_for_field
     if fwdfor == nil
+      if not @check_remote_address
+        @logger.warn("x_forwarded_for_field missing from event", :event => event)
+        @tags_on_failure.each {|tag| event.tag(tag)}
+        return
+      end
+
       @logger.debug? and @logger.debug("x_forwarded_for_field missing from event", :event => event)
       event.set(@target_field, remote_addr)
       filter_matched(event)
       return
     end
 
-
-    begin
-      ip = IPAddr.new(remote_addr)
-    rescue ArgumentError => e
-      @logger.warn("Invalid IP address in remote_addr field", :address => remote_addr, :event => event)
-      @tags_on_failure.each {|tag| event.tag(tag)}
-      return
-    end
-
     # If remote_addr isn't trusted, we don't even have to look at the X-Forwarded-For header
-    if match(ip) == false
+    if @check_remote_address and match(remote_addr_ip) == false
       @logger.debug? and @logger.debug("remote_addr isn't trusted. evaluating to remote_addr", :address => remote_addr)
       event.set(@target_field, remote_addr)
       filter_matched(event)
@@ -202,16 +215,14 @@ class LogStash::Filters::RealIp < LogStash::Filters::Base
       end
     end
 
-    # in case x_forwarded_for is empty
-    if fwdfor.length == 0
-      event.set(@target_field, remote_addr)
-      filter_matched(event)
-      return
-    end
-
     # In case X-Forwarded-For header is set, but zero-length string
-    if fwdfor.length == 1 and fwdfor[0].length < 1
-      @logger.debug? and @logger.debug("xfwdfor header was present but empty, evaluate to remote_addr", :address => remote_addr)
+    if fwdfor.length == 0 or (fwdfor.length == 1 and fwdfor[0].length < 1)
+      if not @check_remote_address
+        @logger.warn("x_forwarded_for_field header was present but empty", :event => event)
+        @tags_on_failure.each {|tag| event.tag(tag)}
+        return
+      end
+      @logger.debug? and @logger.debug("x_forwarded_for_field header was present but empty, evaluate to remote_addr", :address => remote_addr)
       event.set(@target_field, remote_addr)
       filter_matched(event)
       return
