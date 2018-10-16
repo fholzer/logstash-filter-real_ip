@@ -106,7 +106,7 @@ class LogStash::Filters::RealIp < LogStash::Filters::Base
   config :target_on_invalid_ip, :validate => :string, :default => ""
 
   # In case any IPs processed are invalid IP addresses, these tags will be set.
-  config :tags_in_invalid_ip, :valudate => :array, :default => ["_real_ip_invalid_ip"]
+  config :tags_on_invalid_ip, :valudate => :array, :default => ["_real_ip_invalid_ip"]
 
   # In case of error during evaluation, these tags will be set.
   config :tags_on_failure, :validate => :array, :default => ["_real_ip_lookup_failure"]
@@ -230,7 +230,7 @@ class LogStash::Filters::RealIp < LogStash::Filters::Base
           @tags_on_failure.each {|tag| event.tag(tag)}
           fatal = true
         end
-        @tags_in_invalid_ip.each {|tag| event.tag(tag)}
+        @tags_on_invalid_ip.each {|tag| event.tag(tag)}
         next
       end
 
