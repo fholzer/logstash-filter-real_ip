@@ -111,6 +111,9 @@ class LogStash::Filters::RealIp < LogStash::Filters::Base
   config :target_on_invalid_ip, :validate => :string, :default => ""
 
   # In case any IPs processed are invalid IP addresses, these tags will be set.
+  config :tags_on_port_in_header, :valudate => :array, :default => ["_real_ip_port_in_header"]
+
+  # In case any IPs processed are invalid IP addresses, these tags will be set.
   config :tags_on_invalid_ip, :valudate => :array, :default => ["_real_ip_invalid_ip"]
 
   # In case of error during evaluation, these tags will be set.
@@ -151,6 +154,23 @@ class LogStash::Filters::RealIp < LogStash::Filters::Base
     end
     false
   end # def match
+
+  private
+  def parse(event, address)
+    begin
+      return address, IPAddr.new(address)
+    rescue ArgumentError => e
+      components = address.split(':')
+
+      if components.length != 2
+        raise ArgumentError, "Invalid IP address"
+      end
+
+      ipstr, ip = components.first, IPAddr.new(components.first)
+      @tags_on_port_in_header.each {|tag| event.tag(tag)}
+      return ipstr, ip
+    end
+  end
 
   public
   def filter(event)
@@ -234,7 +254,7 @@ class LogStash::Filters::RealIp < LogStash::Filters::Base
     # check each IP in x_forwarded_for_field from last to first
     (fwdfor.length - 1).downto(0) do |i|
       begin
-        ip = IPAddr.new(fwdfor[i])
+        ipstr, ip = parse(event, fwdfor[i])
       rescue ArgumentError => e
         @logger.warn("Invalid IP address", :address => fwdfor[i], :event => event)
         if not found
@@ -249,7 +269,7 @@ class LogStash::Filters::RealIp < LogStash::Filters::Base
 
       # return on the first non-match against our trusted networks
       if found == false and fatal == false and match(ip) == false
-        event.set(@target_field, fwdfor[i])
+        event.set(@target_field, ipstr)
         filter_matched(event)
         return if not @need_all
         found = true

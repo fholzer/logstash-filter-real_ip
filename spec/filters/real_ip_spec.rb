@@ -50,6 +50,15 @@ describe LogStash::Filters::RealIp do
       expect(subject.get('real_ip')).to eq('1.2.3.4')
     end
 
+    sample("remote_addr" => "10.2.3.4", "xfwdfor" => "1.2.3.4:54321") do
+      expect(subject).to include("success")
+      expect(subject).to include("tags")
+      expect(subject).to include("real_ip")
+      expect(subject.get('real_ip')).to eq('1.2.3.4')
+      expect(subject.get('tags')).to include('_real_ip_port_in_header')
+      expect(subject.get('tags').length).to be(1)
+    end
+
     sample("remote_addr" => "10.2.3.4", "xfwdfor" => ["1.2.3.4", "192.168.3.4"]) do
       expect(subject).to include("success")
       expect(subject).not_to include("tags")
